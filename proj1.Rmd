@@ -1,18 +1,12 @@
 ---
-title: "Statisitcal Programming - Project 1"
 output: rmarkdown::html_document
 author: Andrew Amore
 ---
 
-Due on Friday, October 15th by 5:00 pm (17:00).
-
-Before you start be sure to read through *all* of the rules and instructions in the `README.md`.
-
-<br/>
 
 ### Data
 
-```{r}
+```{r, warning=FALSE, message=FALSE, include=FALSE}
 library(tidyverse)
 library(kableExtra)
 library(ggplot2)
@@ -21,8 +15,6 @@ f1 = readRDS(file="data/f1.rds")
 knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
 ```
 
-
-<br/>
 
 ### Task 1 - Tidy the data
 
@@ -76,14 +68,11 @@ val = val %>% hoist(
          position,
          points) %>%
   rename(constructor = name)
-# pull top 10 rows
-# head(val, n = 10)
 
 # format and print table
 val %>% head(., 10) %>%
   kbl() %>%
   kable_material(c("striped", "hover"))
-
 ```
 
 <br/>
