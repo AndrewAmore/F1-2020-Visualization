@@ -1,0 +1,528 @@
+---
+title: "Statisitcal Programming - Project 1"
+output: rmarkdown::html_document
+author: Andrew Amore
+---
+
+Due on Friday, October 15th by 5:00 pm (17:00).
+
+Before you start be sure to read through *all* of the rules and instructions in the `README.md`.
+
+<br/>
+
+### Data
+
+```{r}
+library(tidyverse)
+library(kableExtra)
+library(ggplot2)
+library(ggpubr)
+f1 = readRDS(file="data/f1.rds")
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+
+<br/>
+
+### Task 1 - Tidy the data
+
+#### Write up
+
+<!-- Include write up here -->
+First, I manually identified the most "granular" nested item from the f1 object: 
+races. To correctly format the nested structure I converted races to a tibble 
+and leveraged various dplyr functions making use of hoist to cut down on 
+unnecessary unnest_wider calls. The top 10 rows were displayed using head.
+
+#### Code
+
+```{r task1}
+val = f1$MRData$RaceTable$Races
+# convert to tibble
+val = tibble::tibble(val)
+# dplyr pipeline start
+val = val %>% hoist(
+  val,
+  race_name = "raceName",
+  round = "round",
+  date = "date",
+  results = "Results"
+) %>% # elongate results for each race at driver level
+  unnest_longer(results) %>%
+  # hoist again to extract final table 
+  hoist(
+    results,
+    givenName = c("Driver", "givenName"),
+    familyName = c("Driver", "familyName"),
+    name = c("Constructor", "name"),
+    position = "positionText",
+    points = "points"
+  ) %>% # concatenate driver name
+  mutate(driver = paste(givenName, familyName, sep = " "),
+         position = case_when(
+          position == 'R' ~ as.character(NA), #"Ret",
+          position == 'D' ~ as.character(NA), #"DQ",
+          position == 'E' ~ as.character(NA), #"Excluded",
+          position == 'W' ~ as.character(NA), #"WD",
+          position == 'F' ~ as.character(NA), #"FTQ",
+          position == 'N' ~ as.character(NA), #"NC",
+          TRUE ~ position
+         )) %>%
+  select(race_name,
+         round,
+         date,
+         driver,
+         name,
+         position,
+         points) %>%
+  rename(constructor = name)
+# pull top 10 rows
+# head(val, n = 10)
+
+# format and print table
+val %>% head(., 10) %>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+
+```
+
+<br/>
+
+
+### Task 2 - Drivers' Championship
+
+#### Write up
+
+<!-- Include write up here -->
+In order to aggregate the correct metric one column, points, was converted
+to numeric type. A temporary data structure called total_points was created to
+capture total points by driver over the season.
+
+Race position was determined next. The base table from task 1 was pivoted on
+race_name to reflect the driver's position in each race. This race table was
+joined back to the total_points to create the final task objective.
+
+An additional package, kableExtra, was used to format tables using CSS bootstrap
+styling.
+
+#### Code
+
+```{r task2}
+# convert column types to match requirements
+val$points = as.numeric(val$points)
+val$position = as.numeric(val$position)
+
+total_points = val %>%
+  group_by(driver) %>%  # get the team results
+  summarise(season_points = sum(points))
+
+# join back to the points summary then sort by points...
+race_wide = val %>%
+  select(race_name, driver, position) %>%
+  pivot_wider(names_from = race_name, values_from = position)
+
+# create table df
+task2_tbl = race_wide %>% inner_join(total_points, by = "driver") %>%
+  arrange(desc(season_points))
+
+# set col names to match wikipedia source
+colnames(task2_tbl)[1:ncol(task2_tbl)] <-
+  c(
+    'Driver',
+    'AUT',    'STY',
+    'HUN',    'GBR',
+    '70A',    'ESP',
+    'BEL',    'ITA',
+    'TUS',    'RUS',
+    'EIF',    'POR',
+    'EMI',    'TUR',
+    'BHR',    'SKH',
+    'ABU',    'Points'
+  )
+
+# format and print table
+task2_tbl %>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+```
+
+<br/>
+
+### Task 3 - Cumulative Constructors
+
+#### Write up
+
+<!-- Include write up here -->
+First a temporary data frame was created to assign the final season team 
+rankings which will be joined back to final result set. 
+
+Team points were calculated for each race of the season based on driver 
+affiliation. After team points, a new column was created to store the cumulative
+sum of points throughout the season. This was joined back to the initial temp 
+data frame to assign team rankings and final result set sorted based on this
+ranking.
+
+#### Code
+
+```{r task3}
+# temporary dataframe storing final season team rankings
+season_rank = val %>% 
+  group_by(constructor) %>%
+  summarise(season_point_total = sum(points)) %>%
+  mutate(ranking = rank(desc(season_point_total)))
+
+# first compute team points for each race (sum of points for each driver on each
+# team).
+task3_tbl = val %>% ungroup() %>%
+  group_by(race_name, date, constructor) %>%
+  summarise(season_points = sum(points)) %>%
+  arrange(date) %>% ungroup() %>% group_by(constructor) %>%
+  inner_join(season_rank, by = "constructor") %>%
+  
+  # based on the total team points for each race, compute cumulative sum
+  mutate(cum_points = cumsum(season_points)) %>%
+  select(-date,-season_points) %>%
+  pivot_wider(names_from = race_name, values_from = cum_points) %>%
+  arrange(ranking) %>%
+  select(-season_point_total,-ranking)
+
+# set col names to match wikipedia source
+colnames(task3_tbl)[1:ncol(task3_tbl)] <-
+  c(
+    'Constructor Name',
+    'AUT',    'STY',
+    'HUN',    'GBR',
+    '70A',    'ESP',
+    'BEL',    'ITA',
+    'TUS',    'RUS',
+    'EIF',    'POR',
+    'EMI',    'TUR',
+    'BHR',    'SKH',
+    'ABU'
+  )
+
+# format and print table
+task3_tbl %>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+```
+
+<br/>
+
+### Task 4 - Visualization
+
+#### Write up
+
+<!-- Include write up here -->
+
+F1 is a truly unique sport combining the marvels of modern engineering
+with some of the most gifted reflex-based athletes in the world. Many
+people might not be aware of the resource disparities which exist between teams
+who compete in the same races for the same championship crown. Just how unequal are 
+these teams in terms of the seasonal F1 points system awarded based on final race
+position?
+
+This visualization hopes to display how F1 is dominated by the top team(s) by 
+displaying the performance of drivers and teams in the 2020 F1 season.
+
+Two charts were created for this purpose:
+
+**Spiral Team Chart (A):**<br/>
+Team performance through each race is displayed using a circular bar 
+plot. Race abbreviations, denoted along the outside edge, start from 1:00 and 
+move clockwise around the circle in order of race occurrence. Points for each
+driver are aggregated by team, cumulatively summed over the season, and shown
+by color. This chart clearly shows the dominance by team Mercedes over the season
+as the color largest block in each race is affiliated with this team. We see this
+percentage remain relatively constant from the first few races of the season all
+the way to the finale.
+
+**Spiral Driver Chart (B):**<br/>
+Point disparities amongst drivers and teams are most magnified at season end. To
+show this lopsided distribution a spiral bar chart was created. Drivers are
+grouped by constructor and colored according to their affiliation. From this 
+chart one can observe just how dominant Lewis Hamilton (and team Mercedes) really
+was. Hamilton has almost twice as many points as the next closest opposing driver.
+This chart also shows the large number of drivers with 0 points, evident by the
+missing axis tick marks denoting point totals.
+
+#### Code
+
+```{r task4, fig.dim = c(10,7)}
+############### plot1 - team performance by race (spiral bar) ###############
+season = val %>% ungroup() %>%
+  group_by(race_name, date, constructor) %>%
+  summarise(season_points = sum(points)) %>%
+  arrange(date) %>% ungroup() %>% group_by(constructor) %>%
+  inner_join(season_rank, by = "constructor") %>%
+  mutate(cum_points = cumsum(season_points)) %>%
+  select(-season_point_total)
+
+# assign integer denoting order race occurred during season
+race_int = val %>% distinct(race_name, date) %>% 
+  mutate(race_num = rank(date))%>% select(-date)
+team_cir = season %>% inner_join(race_int, by = "race_name") %>% 
+  arrange(race_num, cum_points)
+
+# reorder factors for legend ordering
+team_cir$constructor <-
+  factor(
+    team_cir$constructor,
+    levels = c(
+      "AlphaTauri", "Ferrari",
+      "McLaren", "Mercedes",
+      "Racing Point", "Red Bull",
+      "Renault", "Alfa Romeo",
+      "Haas F1 Team", "Williams"
+    )
+  )
+
+# create data structure for the plot labels
+racelabs = c(
+  'AUT', 'STY',
+  'HUN', 'GBR',
+  '70A', 'ESP',
+  'BEL', 'ITA',
+  'TUS', 'RUS',
+  'EIF', 'POR',
+  'EMI', 'TUR',
+  'BHR', 'SKH',
+  'ABU'
+)
+
+# plot
+fraction_plt = ggplot(team_cir, aes(x = race_num, y = cum_points,
+                                    fill = constructor)) +
+  geom_col(alpha = 0.5, colour = "black") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_bw() +
+  theme(
+    panel.border = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  coord_polar() +
+  scale_x_continuous(limits = c(1, 18)) +
+  guides(fill = guide_legend(title = "Constructor")) +
+  xlab("Race Name (In Order of Season)") +
+  ylab("Cumulative Points through Each Race")  +
+  # set the rotational axis labels to be the race names
+  scale_x_discrete(limits = c(seq(
+    from = 1, to = 17, by = 1
+  )), labels = racelabs)
+
+
+############# plot2 - individual driver performance (spiral bar) ############# 
+# chart inspiration and some source code::
+# https://www.r-graph-gallery.com/299-circular-stacked-barplot.html
+
+## stacked bar chart...driver with team
+stcked = val %>% group_by(driver, constructor) %>%
+  summarise(season_points = sum(points))
+
+data = stcked %>% gather(key = "observation", value = "value", -c(1, 2))
+
+# set ordering for consistency between chart legends
+data$constructor <-
+  factor(
+    data$constructor,
+    levels = c(
+      "AlphaTauri", "Ferrari",
+      "McLaren", "Mercedes",
+      "Racing Point", "Red Bull",
+      "Renault", "Alfa Romeo",
+      "Haas F1 Team", "Williams"
+    )
+  )
+
+# controls "dart board" arc lengths and label orientation
+empty_bar <- 2.5
+data <- data %>% arrange(constructor, driver)
+data$id <- rep(seq(1, nrow(data) / 1) , each = 1)
+# sets label location on chart
+label_data <-
+  data %>% group_by(id, driver) %>% summarize(tot = sum(value))
+number_of_bar <- nrow(label_data)
+angle <- 90 - 360 * (label_data$id - 0.5) / number_of_bar
+label_data$hjust <- ifelse(angle < -90, 1, 0)
+label_data$angle <- ifelse(angle < -90, angle + 180, angle)
+# converts data into correct format
+base_data <- data %>%
+  group_by(constructor) %>%
+  summarize(start = min(id), end = max(id) - empty_bar) %>%
+  rowwise() %>%
+  mutate(title = mean(c(start, end)))
+
+# this sets location for team labels around the interior
+grid_data <- base_data
+grid_data$end <-
+  grid_data$end[c(nrow(grid_data), 1:nrow(grid_data) - 1)] + 1
+grid_data$start <- grid_data$start - 1
+grid_data <- grid_data[-1,]
+
+driver_plt = ggplot(data) +
+  # Add the stacked bar
+  geom_bar(
+    aes(x = as.factor(id), y = value, fill = constructor),
+    stat = "identity",
+    alpha = 0.5,
+    colour = "black"
+  ) +
+  scale_fill_brewer(palette = "Set3") +
+  
+  ## add tick marks (dart board lines) denoting the season point totals
+  geom_segment(
+    data = grid_data,
+    aes(
+      x = end,
+      y = 0,
+      xend = start,
+      yend = 0
+    ),
+    colour = "grey",
+    alpha = 1,
+    size = 0.1 ,
+    inherit.aes = FALSE
+  ) +
+  geom_segment(
+    data = grid_data,
+    aes(
+      x = end,
+      y = 100,
+      xend = start,
+      yend = 100
+    ),
+    colour = "grey",
+    alpha = 1,
+    size = 0.1 ,
+    inherit.aes = FALSE
+  ) +
+  geom_segment(
+    data = grid_data,
+    aes(
+      x = end,
+      y = 200,
+      xend = start,
+      yend = 200
+    ),
+    colour = "grey",
+    alpha = 1,
+    size = 0.2 ,
+    inherit.aes = FALSE
+  ) +
+  geom_segment(
+    data = grid_data,
+    aes(
+      x = end,
+      y = 300,
+      xend = start,
+      yend = 300
+    ),
+    colour = "grey",
+    alpha = 1,
+    size = 0.3 ,
+    inherit.aes = FALSE
+  ) +
+  geom_segment(
+    data = grid_data,
+    aes(
+      x = end,
+      y = 400,
+      xend = start,
+      yend = 400
+    ),
+    colour = "grey",
+    alpha = 1,
+    size = 0.4 ,
+    inherit.aes = FALSE
+  ) +
+  ##
+  
+  # tick mark labels
+  ggplot2::annotate(
+    "text",
+    x = rep(max(data$id) / 2, 4),
+    y = c(100, 200, 300, 400),
+    label = c("100", "200", "300", "400") ,
+    color = "grey",
+    size = 3 ,
+    angle = 0,
+    fontface = "bold",
+    hjust = 1
+  ) +
+  ggplot2::annotate(
+    "text",
+    x = rep(max(data$id) / 1.23, 4),
+    y = c(100, 200, 300, 400),
+    label = c("100", "200", "300", "400") ,
+    color = "grey",
+    size = 3 ,
+    angle = 0,
+    fontface = "bold",
+    hjust = 1
+  ) +
+  ggplot2::annotate(
+    "text",
+    x = rep(max(data$id) / 5.25, 4),
+    y = c(100, 200, 300, 400),
+    label = c("100", "200", "300", "400") ,
+    color = "grey",
+    size = 3 ,
+    angle = 0,
+    fontface = "bold",
+    hjust = 1
+  ) +
+  
+  # tick mark range
+  ylim(-150, 425) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  coord_polar() +
+  # Add labels for each bar (driver names)
+  geom_text(
+    data = label_data,
+    aes(
+      x = id,
+      y = 10,
+      label = driver,
+      hjust = hjust
+    ),
+    color = "black",
+    fontface = "bold",
+    alpha = 0.6,
+    size = 3.5,
+    angle = label_data$angle,
+    inherit.aes = FALSE
+  )
+
+# arrange plots
+plot = ggarrange(
+  fraction_plt,
+  driver_plt,
+  ncol = 2,
+  nrow = 1,
+  common.legend = TRUE,
+  legend = "top",
+  widths = c(1, 1.65),
+  heights = c(1, 1.65),
+  align = "hv",
+  labels = "AUTO"
+)
+# add main title to figure
+annotate_figure(plot,
+                top = text_grob(
+                  "2020 F1 Driver & Team Performance",
+                  color = "black",
+                  face = "bold",
+                  size = 18
+                ))
+```
+
+<br/>
