@@ -9,7 +9,7 @@ An assignment from a graduate level course in R focused on data manipulation and
 Visit [https://andrewamore.github.io/F1-2020-R-Visualization/](https://andrewamore.github.io/F1-2020-R-Visualization/)
 to see the rendered index.html document.
 
-## Documents of interest
+## Documents of Interest
 
 - `index.html`: Output file displaying the code, tables and figure.
 - `proj1.Rmd`: Code used to generate `proj1.html`.
