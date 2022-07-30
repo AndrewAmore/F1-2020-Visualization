@@ -1,34 +1,124 @@
 ---
-output: rmarkdown::html_document
+title: |
+    |       2020 F1 Results: 
+    | Data Prep & Visualization in R
+output: 
+  html_document:
+      code_folding: hide
 author: Andrew Amore
 ---
-
-
-### Data
 
 ```{r, warning=FALSE, message=FALSE, include=FALSE}
 library(tidyverse)
 library(kableExtra)
 library(ggplot2)
 library(ggpubr)
-f1 = readRDS(file="data/f1.rds")
+library(httr)
+library(jsonlite)
 knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
 ```
 
+```{css, echo=FALSE}
+/* Move code folding buttons to the left */
+div.col-md-12 .pull-right {
+  float: left !important
+}
 
-### Task 1 - Tidy the data
+body {
+  font-family: helvetica;
+}
 
-#### Write up
+h1 {
+  font-weight: bold;
+  text-align: center;
+}
 
-<!-- Include write up here -->
-First, I manually identified the most "granular" nested item from the f1 object: 
-races. To correctly format the nested structure I converted races to a tibble 
-and leveraged various dplyr functions making use of hoist to cut down on 
-unnecessary unnest_wider calls. The top 10 rows were displayed using head.
+h3 {
+  font-weight: bold;
+}
 
-#### Code
+h4{
+  text-align: center;
+  font-style: italic;
+}
 
+p {
+  font-size: 16px;
+}
+
+.btn {
+  appearance: none;
+  backface-visibility: hidden;
+  background-color: #27ae60;
+  border-radius: 4px;
+  border-style: none;
+  box-shadow: rgba(39, 174, 96, .15) 0 4px 9px;
+  box-sizing: border-box;
+  color: #fff;
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: normal;
+  line-height: 1.5;
+  outline: none;
+  overflow: hidden;
+  padding: 8px 15px;
+  position: relative;
+  text-align: center;
+  text-decoration: none;
+  user-select: none;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: translateY(2px);
+  transition-duration: .35s;
+}
+
+.btn:hover {
+  box-shadow: rgba(39, 174, 96, .2) 0 6px 12px;
+}
+
+```
+
+### Abstract
+
+Data from the 2020 Formula 1 racing season was downloaded from ergast.com, the official
+ API of F1, containing results from the 17 race season. The information returned 
+ from the API call is messy, hard to interpret, and deeply nested. To make the
+results more interpretable a dplyr data cleaning pipeline was implemented
+to flatten the table structure with only necessary fields.
+
+To enhance a viewers ability to interpret the tabular results two graphics were
+built to show driver and constructor performance over the season. The driver
+graphic clearly shows the dominance of Mercedes.
+
+### Part 1 - Data Prep
+
+An example API call, with only one race result, and code to explain how the JSON
+payload was saved to a local flat file.
+```{r, eval=FALSE, class.source = 'fold-show'}
+samp_res = GET("https://ergast.com/api/f1/2020/results.json?limit=1?callback=myParser")
+f1_samp = fromJSON(rawToChar(samp_res$content))
+saveRDS(f1_samp, "./data/f1_samp.rds")
+```
+
+The raw structure is very nested and needs to be expanded. A full extraction was saved
+locally and used for visualization called ./data/f1.rds. The nested structure can be 
+seen from the R data viewer.
+
+<center>
+![](./data/f1_data_viewer.png)
+</center>
+<br/>
+To make this format more plot friendly it needs to be cleaned. First, I manually 
+identified the most "granular" nested item from the f1 object: races. To correctly
+format the nested structure I converted races to a tibble and leveraged various 
+dplyr functions making use of hoist to cut down on unnecessary unnest_wider calls. 
+The top 10 rows were displayed using head.
 ```{r task1}
+f1 = readRDS(file="data/f1.rds")
 val = f1$MRData$RaceTable$Races
 # convert to tibble
 val = tibble::tibble(val)
@@ -71,32 +161,11 @@ val = val %>% hoist(
 
 # format and print table
 val %>% head(., 10) %>%
-  kbl() %>%
+  kbl(caption = "Cleaned Results Table") %>%
   kable_material(c("striped", "hover"))
 ```
 
-<br/>
-
-
-### Task 2 - Drivers' Championship
-
-#### Write up
-
-<!-- Include write up here -->
-In order to aggregate the correct metric one column, points, was converted
-to numeric type. A temporary data structure called total_points was created to
-capture total points by driver over the season.
-
-Race position was determined next. The base table from task 1 was pivoted on
-race_name to reflect the driver's position in each race. This race table was
-joined back to the total_points to create the final task objective.
-
-An additional package, kableExtra, was used to format tables using CSS bootstrap
-styling.
-
-#### Code
-
-```{r task2}
+```{r task2, include=FALSE}
 # convert column types to match requirements
 val$points = as.numeric(val$points)
 val$position = as.numeric(val$position)
@@ -135,25 +204,7 @@ task2_tbl %>%
   kable_material(c("striped", "hover"))
 ```
 
-<br/>
-
-### Task 3 - Cumulative Constructors
-
-#### Write up
-
-<!-- Include write up here -->
-First a temporary data frame was created to assign the final season team 
-rankings which will be joined back to final result set. 
-
-Team points were calculated for each race of the season based on driver 
-affiliation. After team points, a new column was created to store the cumulative
-sum of points throughout the season. This was joined back to the initial temp 
-data frame to assign team rankings and final result set sorted based on this
-ranking.
-
-#### Code
-
-```{r task3}
+```{r task3, include=FALSE}
 # temporary dataframe storing final season team rankings
 season_rank = val %>% 
   group_by(constructor) %>%
@@ -196,25 +247,15 @@ task3_tbl %>%
   kable_material(c("striped", "hover"))
 ```
 
-<br/>
-
-### Task 4 - Visualization
-
-#### Write up
-
-<!-- Include write up here -->
+### Part 2 - Visualization
 
 F1 is a truly unique sport combining the marvels of modern engineering
 with some of the most gifted reflex-based athletes in the world. Many
 people might not be aware of the resource disparities which exist between teams
 who compete in the same races for the same championship crown. Just how unequal are 
 these teams in terms of the seasonal F1 points system awarded based on final race
-position?
-
-This visualization hopes to display how F1 is dominated by the top team(s) by 
-displaying the performance of drivers and teams in the 2020 F1 season.
-
-Two charts were created for this purpose:
+position? This visualization hopes to display how F1 is dominated by the top team(s) by 
+displaying the performance of drivers and teams in the 2020 F1 season. Two charts were created for this purpose:
 
 **Spiral Team Chart (A):**<br/>
 Team performance through each race is displayed using a circular bar 
@@ -234,9 +275,6 @@ chart one can observe just how dominant Lewis Hamilton (and team Mercedes) reall
 was. Hamilton has almost twice as many points as the next closest opposing driver.
 This chart also shows the large number of drivers with 0 points, evident by the
 missing axis tick marks denoting point totals.
-
-#### Code
-
 ```{r task4, fig.dim = c(10,7)}
 ############### plot1 - team performance by race (spiral bar) ###############
 season = val %>% ungroup() %>%
