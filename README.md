@@ -12,5 +12,5 @@ to see the rendered index.html document.
 ## Documents of Interest
 
 - `index.html`: Output file displaying the code, tables and figure.
-- `proj1.Rmd`: Code used to generate `proj1.html`.
+- `proj1.Rmd`: Code used to generate `index.html`.
 - `./data/get_data.R`: Data harvesting script.
